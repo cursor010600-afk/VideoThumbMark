@@ -52,7 +52,10 @@ from pyrogram import idle
 # bots imports
 from config import Config
 from plugins.web_support import web_server
-from plugins.file_rename import app
+# Removed: from plugins.file_rename import app
+# The 'app' instance in file_rename.py causes duplicate processing
+# It's only needed for 4GB+ files with STRING_SESSION (premium account)
+# Since STRING_SESSION is not configured, we don't import it
 
 # Get logging configurations
 logging.basicConfig(
@@ -70,10 +73,10 @@ class DigitalRenameBot(Client):
             api_id=Config.API_ID,
             api_hash=Config.API_HASH,
             bot_token=Config.BOT_TOKEN,
-            workers=200,
+            workers=50,  # Reduced from 200 to prevent issues
             plugins={"root": "plugins"},
             sleep_threshold=5,
-            max_concurrent_transmissions=50
+            max_concurrent_transmissions=10  # Reduced from 50 for stability
         )
                 
          
@@ -169,19 +172,14 @@ digital_instance = DigitalRenameBot()
 
 def main():
     async def start_services():
-        if Config.STRING_SESSION:
-            await asyncio.gather(app.start(), digital_instance.start())
-        else:
-            await asyncio.gather(digital_instance.start())
+        # Only start the main bot instance
+        await digital_instance.start()
         
         # Idle mode start karo
         await idle()
         
         # Bot stop karo
-        if Config.STRING_SESSION:
-            await asyncio.gather(app.stop(), digital_instance.stop())
-        else:
-            await asyncio.gather(digital_instance.stop())
+        await digital_instance.stop()
 
     loop = asyncio.get_event_loop()
     try:
