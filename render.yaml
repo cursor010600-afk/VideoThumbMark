@@ -22,7 +22,7 @@ services:
       - key: LOG_CHANNEL
         sync: false
       - key: FORCE_SUB
-        sync: false
+        value: ""
       - key: STRING_SESSION
         sync: false
       - key: WATERMARK_TEXT
