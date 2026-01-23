@@ -55,7 +55,9 @@ import os, time, asyncio, re, threading
 UPLOAD_TEXT = """Uploading Started...."""
 DOWNLOAD_TEXT = """Download Started..."""
 
-app = Client("4gb_FileRenameBot", api_id=Config.API_ID, api_hash=Config.API_HASH, session_string=Config.STRING_SESSION)
+# Commented out: app instance for 4GB+ file support
+# Only needed if you have a premium Telegram account with STRING_SESSION configured
+# app = Client("4gb_FileRenameBot", api_id=Config.API_ID, api_hash=Config.API_HASH, session_string=Config.STRING_SESSION)
 
 # Global queue system for sequential processing
 user_queues = {}  # {user_id: [messages]}
@@ -640,9 +642,10 @@ async def upload_doc(bot, update):
     final_file_path = metadata_path if metadata_mode and os.path.exists(metadata_path) else file_path
     
     if media.file_size > 2000 * 1024 * 1024:
-        # Upload file using unified function for large files
+        # For files >2GB, upload directly to user
+        # (Previously used app instance + LOG_CHANNEL, but that's not configured)
         filw, error = await upload_files(
-            app, Config.LOG_CHANNEL, upload_type, final_file_path, 
+            bot, update.message.chat.id, upload_type, final_file_path, 
             ph_path, caption, duration, rkn_processing
         )
 
@@ -652,13 +655,6 @@ async def upload_doc(bot, update):
                 await digital_botz.set_used_limit(user_id, used_remove)
             await remove_path(ph_path, file_path, dl_path, metadata_path)
             return await rkn_processing.edit(f"Upload Error: {error}")
-
-        
-        from_chat = filw.chat.id
-        mg_id = filw.id
-        await asyncio.sleep(2)
-        await bot.copy_message(update.from_user.id, from_chat, mg_id)
-        await bot.delete_messages(from_chat, mg_id)
         
     else:
         # Upload file using unified function for regular files
