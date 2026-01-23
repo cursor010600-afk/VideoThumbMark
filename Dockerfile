@@ -5,7 +5,9 @@ FROM python:3.11-slim
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    echo "Verifying font installation..." && \
+    ls -la /usr/share/fonts/truetype/dejavu/ || echo "DejaVu fonts not found!"
 
 # Set working directory
 WORKDIR /app
@@ -23,5 +25,8 @@ COPY . .
 RUN mkdir -p /tmp/Watermarked /tmp/Thumbnails /tmp/Metadata /tmp/Renames
 
 # Command to run the bot
-CMD ["python", "bot.py"]
+CMD echo "Starting bot..." && \
+    echo "Checking fonts..." && \
+    ls -la /usr/share/fonts/truetype/dejavu/ 2>/dev/null || echo "Warning: DejaVu fonts not found" && \
+    python bot.py
 

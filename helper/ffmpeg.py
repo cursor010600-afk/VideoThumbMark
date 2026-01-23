@@ -76,7 +76,7 @@ def detect_hardware_encoder():
 async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying", position="bottom-right", status_message=None):
     """
     Add watermark text to video using FFmpeg
-    position options: top-left, top-right, bottom-left, bottom-right, center
+    position options: top-left, top-right, bottom-left, bottom-right, center, scroll-lr-center
     status_message: optional message object to update with progress
     """
     try:
@@ -86,6 +86,11 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 await status_message.edit("`🎨 Adding watermark... please wait`")
             except:
                 pass
+        
+        print(f"[WATERMARK] Starting watermark process for: {input_file}")
+        print(f"[WATERMARK] Output file: {output_file}")
+        print(f"[WATERMARK] Watermark text: {watermark_text}")
+        print(f"[WATERMARK] Position: {position}")
         
         # Get video dimensions for positioning
         probe_cmd = [
@@ -97,12 +102,14 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         
         width = probe_data['streams'][0]['width']
         height = probe_data['streams'][0]['height']
+        print(f"[WATERMARK] Video dimensions: {width}x{height}")
 
         # Calculate consistent font size based on video height (3.5% of height for good visibility)
         # This ensures same relative size across all videos
         fontsize = max(20, int(height * 0.035))  # Minimum 20px, scales with video height
         # Clamp to reasonable range (20-60px) for visibility
         fontsize = min(60, max(20, fontsize))
+        print(f"[WATERMARK] Calculated font size: {fontsize}")
 
         # Get duration (for scrolling watermark)
         duration_seconds = 0.0
@@ -114,7 +121,9 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 input_file
             ])
             duration_seconds = float(dur_out.decode("utf-8", errors="ignore").strip() or 0.0)
-        except Exception:
+            print(f"[WATERMARK] Video duration: {duration_seconds}s")
+        except Exception as e:
+            print(f"[WATERMARK] Could not get duration: {e}")
             duration_seconds = 0.0
         
         # Calculate watermark position
@@ -141,14 +150,40 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
             x = f"(W-w)/2"
             y = f"(H-h)/2"
         
-        # FFmpeg drawtext on Windows may fail with:
-        # "Fontconfig error: Cannot load default config file"
-        # Fix: provide a font file directly (defaults to Arial).
-        fontfile = os.environ.get("WATERMARK_FONTFILE", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
-        # FFmpeg filter args need special escaping on Windows:
+        print(f"[WATERMARK] Position formula - x: {x}, y: {y}")
+        
+        # Font file detection with fallback options
+        # Priority: Environment variable > DejaVu > Liberation > Fallback to system default
+        fontfile_candidates = [
+            os.environ.get("WATERMARK_FONTFILE", ""),
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        ]
+        
+        fontfile = None
+        for candidate in fontfile_candidates:
+            if candidate and os.path.exists(candidate):
+                fontfile = candidate
+                print(f"[WATERMARK] ✓ Found font file: {fontfile}")
+                break
+            elif candidate:
+                print(f"[WATERMARK] ✗ Font not found: {candidate}")
+        
+        if not fontfile:
+            print("[WATERMARK] WARNING: No font file found, FFmpeg will use system default")
+            print("[WATERMARK] This may cause the watermark to fail on some systems")
+            # Use empty string to let FFmpeg try system default
+            fontfile = ""
+        
+        # FFmpeg filter args need special escaping:
         # - use forward slashes
         # - escape ':' as '\:'
-        fontfile_ffmpeg = fontfile.replace("\\", "/").replace(":", "\\:")
+        if fontfile:
+            fontfile_ffmpeg = fontfile.replace("\\", "/").replace(":", "\\:")
+        else:
+            fontfile_ffmpeg = ""
 
         # Basic escaping for drawtext
         escaped_text = watermark_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
@@ -156,21 +191,34 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         # Box border width scales with font size for better visibility
         box_border = max(3, int(fontsize * 0.15))
 
-        drawtext = (
-            f"drawtext="
-            f"fontfile='{fontfile_ffmpeg}':"
-            f"text='{escaped_text}':"
-            f"fontcolor=white@0.9:fontsize={fontsize}:"
-            f"x={x}:y={y}:"
-            f"box=1:boxcolor=black@0.5:boxborderw={box_border}"
-        )
+        # Build drawtext filter - only include fontfile if we have one
+        if fontfile_ffmpeg:
+            drawtext = (
+                f"drawtext="
+                f"fontfile='{fontfile_ffmpeg}':"
+                f"text='{escaped_text}':"
+                f"fontcolor=white@0.9:fontsize={fontsize}:"
+                f"x={x}:y={y}:"
+                f"box=1:boxcolor=black@0.5:boxborderw={box_border}"
+            )
+        else:
+            # No fontfile - let FFmpeg use system default
+            drawtext = (
+                f"drawtext="
+                f"text='{escaped_text}':"
+                f"fontcolor=white@0.9:fontsize={fontsize}:"
+                f"x={x}:y={y}:"
+                f"box=1:boxcolor=black@0.5:boxborderw={box_border}"
+            )
+        
+        print(f"[WATERMARK] Drawtext filter: {drawtext}")
 
         # Detect hardware encoder for faster processing
         hw_encoder, hw_preset = detect_hardware_encoder()
         
         if hw_encoder:
             # Use hardware acceleration (GPU encoding)
-            print(f"Using hardware encoder: {hw_encoder}")
+            print(f"[WATERMARK] Using hardware encoder: {hw_encoder}")
             
             # Build command with hardware encoder
             cmd = [
@@ -214,7 +262,7 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
             ])
         else:
             # Fallback to CPU encoding (current optimized settings)
-            print("No hardware encoder detected, using CPU encoding")
+            print("[WATERMARK] No hardware encoder detected, using CPU encoding")
             cmd = [
                 'ffmpeg',
                 '-hide_banner',
@@ -232,11 +280,23 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
             ]
         
         
-        print(f"Adding watermark: {watermark_text}")
-        print(f"Command: {' '.join(cmd)}")
+        print(f"[WATERMARK] FFmpeg command: {' '.join(cmd)}")
         
         # Execute FFmpeg command
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        
+        # Log success
+        print(f"[WATERMARK] ✓ Watermark added successfully")
+        if result.stdout:
+            print(f"[WATERMARK] FFmpeg stdout: {result.stdout}")
+        
+        # Verify output file exists
+        if os.path.exists(output_file):
+            output_size = os.path.getsize(output_file)
+            print(f"[WATERMARK] Output file size: {output_size} bytes")
+        else:
+            print(f"[WATERMARK] ERROR: Output file not created!")
+            return False
         
         # Update status at end
         if status_message:
@@ -249,10 +309,16 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         return True
         
     except subprocess.CalledProcessError as e:
-        print(f"FFmpeg Error: {e.stderr}")
+        print(f"[WATERMARK] ✗ FFmpeg Error (exit code {e.returncode}):")
+        print(f"[WATERMARK] stderr: {e.stderr}")
+        print(f"[WATERMARK] stdout: {e.stdout}")
         return False
     except Exception as e:
-        print(f"Error adding watermark: {e}")
+        print(f"[WATERMARK] ✗ Unexpected error adding watermark:")
+        print(f"[WATERMARK] Error type: {type(e).__name__}")
+        print(f"[WATERMARK] Error message: {e}")
+        import traceback
+        print(f"[WATERMARK] Traceback:\n{traceback.format_exc()}")
         return False
 
 async def embed_thumbnail(video_file, thumbnail_file, output_file):
