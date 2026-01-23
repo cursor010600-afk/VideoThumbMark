@@ -1,0 +1,33 @@
+# Copy this file to .env and fill in your values
+# Telegram Bot Configuration
+# Get these from https://my.telegram.org/apps
+API_ID=your_api_id_here
+API_HASH=your_api_hash_here
+
+# Get Bot Token from @BotFather on Telegram
+BOT_TOKEN=your_bot_token_here
+
+# Admin User IDs (separate multiple IDs with spaces)
+# You can get your user ID by messaging @userinfobot on Telegram
+ADMIN=your_user_id_here
+
+# MongoDB Configuration
+# Get MongoDB URL from https://cloud.mongodb.com or use local MongoDB
+DB_URL=mongodb://localhost:27017
+DB_NAME=Digital_Rename_Bot
+
+# Optional: Premium Account String Session (for 4GB+ file support)
+# Leave empty if you don't need 4GB+ file support
+STRING_SESSION=
+
+# Optional: Force Subscribe Channel (without @)
+# Leave empty if you don't want force subscribe
+FORCE_SUB=
+
+# Optional: Log Channel ID (for bot logs)
+# Leave empty if you don't need logging
+LOG_CHANNEL=
+
+# Optional: Start Picture URL
+# Leave empty to use default
+START_PIC=
