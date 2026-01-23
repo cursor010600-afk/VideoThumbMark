@@ -2,16 +2,11 @@ services:
   - type: web
     plan: free
     name: digital-rename-bot
-    env: python
+    env: docker
     region: oregon
-    buildCommand: |
-      pip install -r requirements.txt
-      apt-get update && apt-get install -y ffmpeg fonts-dejavu-core
-    startCommand: python bot.py
+    dockerfilePath: ./Dockerfile
     autoDeploy: true
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: BOT_TOKEN
         sync: false
       - key: API_ID
@@ -33,7 +28,9 @@ services:
       - key: WATERMARK_TEXT
         value: "@Coursesbuying"
       - key: WATERMARK_POSITION
-        value: "bottom-right"
+        value: "scroll-lr-center"
+      - key: WATERMARK_FONTFILE
+        value: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
       - key: RKN_PIC
         sync: false
 
