@@ -106,6 +106,22 @@ class DigitalRenameBot(Client):
                 sys.modules["plugins" + plugin_name] = load
                 print("Digital Botz Imported " + plugin_name)
                 
+        # Clean up /tmp directories on startup (cloud deployment)
+        temp_dirs = ["/tmp/Watermarked", "/tmp/Thumbnails", "/tmp/Metadata", "/tmp/Renames"]
+        for temp_dir in temp_dirs:
+            try:
+                if os.path.exists(temp_dir):
+                    for file in os.listdir(temp_dir):
+                        file_path = os.path.join(temp_dir, file)
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                    print(f"Cleaned up {temp_dir}")
+                else:
+                    os.makedirs(temp_dir, exist_ok=True)
+                    print(f"Created {temp_dir}")
+            except Exception as e:
+                print(f"Could not clean {temp_dir}: {e}")
+        
         # Reset video sequence counter on bot start
         sequence_file = "video_sequence.txt"
         try:

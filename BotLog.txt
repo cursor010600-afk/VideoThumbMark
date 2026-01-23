@@ -15655,3 +15655,17 @@ task: <Task pending name='Task-248' coro=<IocpProactor.accept.<locals>.accept_co
 2026-01-23 16:56:44,980 - pyrogram.session.session - INFO - NetworkTask stopped
 2026-01-23 16:56:44,981 - pyrogram.connection.connection - INFO - Disconnected
 2026-01-23 16:56:44,981 - pyrogram.session.session - INFO - Session stopped
+2026-01-23 17:34:22,009 - pyrogram.session.session - INFO - NetworkTask stopped
+2026-01-23 17:34:22,010 - pyrogram.session.session - INFO - PingTask stopped
+2026-01-23 17:34:22,010 - pyrogram.connection.connection - INFO - Disconnected
+2026-01-23 17:34:22,010 - pyrogram.session.session - INFO - Session stopped
+2026-01-23 17:34:22,011 - pyrogram.connection.connection - INFO - Connecting...
+2026-01-23 17:34:22,019 - pyrogram.connection.connection - WARNING - Unable to connect due to network issues: [WinError 1232] The network location cannot be reached. For information about network troubleshooting, see Windows Help
+2026-01-23 17:34:23,022 - pyrogram.connection.connection - INFO - Connecting...
+2026-01-23 17:34:23,086 - pyrogram.connection.connection - INFO - Connected! Production DC5 - IPv4
+2026-01-23 17:34:23,087 - pyrogram.session.session - INFO - NetworkTask started
+2026-01-23 17:34:23,245 - pyrogram.session.session - INFO - Session initialized: Layer 220
+2026-01-23 17:34:23,246 - pyrogram.session.session - INFO - Device: CPython 3.13.0 - Pyrogram 2.3.69
+2026-01-23 17:34:23,246 - pyrogram.session.session - INFO - System: Windows 11 (en)
+2026-01-23 17:34:23,246 - pyrogram.session.session - INFO - Session started
+2026-01-23 17:34:23,246 - pyrogram.session.session - INFO - PingTask started

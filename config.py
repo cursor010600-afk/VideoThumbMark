@@ -53,10 +53,10 @@ class Config(object):
     # Watermark configuration
     WATERMARK_TEXT = os.environ.get("WATERMARK_TEXT", "@Coursesbuying")
     WATERMARK_POSITION = os.environ.get("WATERMARK_POSITION", "bottom-right")  # top-left, top-right, bottom-left, bottom-right, center, scroll-lr-center
-    WATERMARK_FONTFILE = os.environ.get("WATERMARK_FONTFILE", r"C:\Windows\Fonts\arial.ttf")
+    WATERMARK_FONTFILE = os.environ.get("WATERMARK_FONTFILE", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     
     # Default thumbnail image (cover photo) - set path to your image file
-    DEFAULT_THUMBNAIL = os.environ.get("DEFAULT_THUMBNAIL", "Thumbnails/default_cover.jpg")
+    DEFAULT_THUMBNAIL = os.environ.get("DEFAULT_THUMBNAIL", "/tmp/Thumbnails/default_cover.jpg")
     try:
         log_channel = os.environ.get("LOG_CHANNEL", "-1002123429361")
         LOG_CHANNEL = int(log_channel) if log_channel else -1002123429361

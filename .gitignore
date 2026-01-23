@@ -1,25 +1,30 @@
-# Python
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# Virtual environment
 .venv/
 venv/
 ENV/
 env/
 
-# Bot temporary files
+# Temporary processing directories (cloud storage)
 Watermarked/
 Thumbnails/
 Metadata/
 Renames/
+/tmp/
+
+# Session files
 *.session
 *.session-journal
 
-# Logs
-*.log
+# Log files
 BotLog.txt
+*.log
 
 # Environment variables
 .env
@@ -29,16 +34,12 @@ BotLog.txt
 .idea/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Large files
-*.mp4
-*.mkv
-*.avi
-*.mov
-*.flv
-*.wmv
-*.webm
+# Keep requirements
+!requirements.txt
+!runtime.txt

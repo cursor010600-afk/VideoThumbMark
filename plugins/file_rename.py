@@ -103,17 +103,17 @@ async def process_single_video(client, message):
     # Create processing message
     rkn_processing = await message.reply_text("`📥 Downloading video...`")
     
-    # Create directories
-    if not os.path.isdir("Watermarked"):
-        os.mkdir("Watermarked")
-    if not os.path.isdir("Thumbnails"):
-        os.mkdir("Thumbnails")
+    # Create directories in /tmp for cloud storage
+    if not os.path.isdir("/tmp/Watermarked"):
+        os.makedirs("/tmp/Watermarked", exist_ok=True)
+    if not os.path.isdir("/tmp/Thumbnails"):
+        os.makedirs("/tmp/Thumbnails", exist_ok=True)
     
     # Download video with unique timestamp to prevent file conflicts
     # Use message ID + timestamp for guaranteed uniqueness
     unique_id = f"{message.id}_{int(time.time() * 1000)}"
     download_filename = filename if filename else f"video_{video_count}.mp4"
-    download_path = f"Watermarked/temp_{unique_id}.mp4"
+    download_path = f"/tmp/Watermarked/temp_{unique_id}.mp4"
     try:
         dl_path = await client.download_media(
             message=message, 
@@ -132,7 +132,7 @@ async def process_single_video(client, message):
     
     # Add watermark if enabled
     if watermark_enabled:
-        watermark_path = f"Watermarked/watermarked_{unique_id}.mp4"
+        watermark_path = f"/tmp/Watermarked/watermarked_{unique_id}.mp4"
         if await add_watermark(dl_path, watermark_path, Config.WATERMARK_TEXT, Config.WATERMARK_POSITION, rkn_processing):
             final_video_path = watermark_path
         else:
@@ -160,7 +160,7 @@ async def process_single_video(client, message):
                     img.thumbnail((320, 320), Image.Resampling.LANCZOS)
                 except AttributeError:
                     img.thumbnail((320, 320), Image.ANTIALIAS)
-                processed_thumb = f"Thumbnails/default_processed_{int(time.time())}.jpg"
+                processed_thumb = f"/tmp/Thumbnails/default_processed_{int(time.time())}.jpg"
                 # Use optimal quality from start (85 is good balance of quality and size)
                 img.save(processed_thumb, "JPEG", quality=85, optimize=True, progressive=True)
                 ph_path = processed_thumb
@@ -174,14 +174,14 @@ async def process_single_video(client, message):
         else:
             print(f"DEBUG: Default thumbnail not found, falling back to extract from video...")
             # Fallback: Extract thumbnail from video
-            thumb_path = f"Thumbnails/thumb_{unique_id}.jpg"
+            thumb_path = f"/tmp/Thumbnails/thumb_{unique_id}.jpg"
             if await extract_thumbnail(final_video_path, thumb_path):
                 ph_path = thumb_path if os.path.exists(thumb_path) else None
                 print(f"DEBUG: Extracted thumbnail from video: {ph_path}")
     
     elif thumbnail_type == "extract":
         # Extract thumbnail from video
-        thumb_path = f"Thumbnails/thumb_{unique_id}.jpg"
+        thumb_path = f"/tmp/Thumbnails/thumb_{unique_id}.jpg"
         if await extract_thumbnail(final_video_path, thumb_path):
             ph_path = thumb_path if os.path.exists(thumb_path) else None
             print(f"DEBUG: Extracted thumbnail from video: {ph_path}")
@@ -192,7 +192,7 @@ async def process_single_video(client, message):
         if custom_thumb_id:
             # Download custom thumbnail
             try:
-                thumb_path = f"Thumbnails/custom_{user_id}_{int(time.time())}.jpg"
+                thumb_path = f"/tmp/Thumbnails/custom_{user_id}_{int(time.time())}.jpg"
                 await client.download_media(custom_thumb_id, file_name=thumb_path)
                 if os.path.exists(thumb_path):
                     # Process to meet Telegram requirements
@@ -201,7 +201,7 @@ async def process_single_video(client, message):
                         img.thumbnail((320, 320), Image.Resampling.LANCZOS)
                     except AttributeError:
                         img.thumbnail((320, 320), Image.ANTIALIAS)
-                    processed_thumb = f"Thumbnails/custom_processed_{user_id}_{int(time.time())}.jpg"
+                    processed_thumb = f"/tmp/Thumbnails/custom_processed_{user_id}_{int(time.time())}.jpg"
                     # Use optimal quality from start
                     img.save(processed_thumb, "JPEG", quality=85, optimize=True, progressive=True)
                     ph_path = processed_thumb
@@ -209,7 +209,7 @@ async def process_single_video(client, message):
             except Exception as e:
                 print(f"ERROR downloading custom thumbnail: {e}")
                 # Fallback to extract from video
-                thumb_path = f"Thumbnails/{download_filename}.jpg"
+                thumb_path = f"/tmp/Thumbnails/{download_filename}.jpg"
                 if await extract_thumbnail(final_video_path, thumb_path):
                     ph_path = thumb_path if os.path.exists(thumb_path) else None
     
@@ -275,19 +275,27 @@ async def process_single_video(client, message):
     except Exception as e:
         await rkn_processing.edit(f"❌ Upload Error: {e}")
     
-    # Cleanup temp files
+    # Cleanup temp files - aggressive cleanup for cloud deployment
     try:
         if os.path.exists(dl_path) and dl_path != final_video_path:
             os.remove(dl_path)
+            print(f"Cleaned up download file: {dl_path}")
         if os.path.exists(final_video_path) and watermark_enabled:
             # Clean up watermarked file after upload
             os.remove(final_video_path)
-        if ph_path and os.path.exists(ph_path) and ph_path.startswith("Thumbnails/default_processed_"):
+            print(f"Cleaned up watermarked file: {final_video_path}")
+        if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/default_processed_"):
             os.remove(ph_path)
-        if ph_path and os.path.exists(ph_path) and ph_path.startswith("Thumbnails/custom_processed_"):
+            print(f"Cleaned up processed thumbnail: {ph_path}")
+        if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/custom_processed_"):
             os.remove(ph_path)
-        if ph_path and os.path.exists(ph_path) and ph_path.startswith("Thumbnails/custom_") and not ph_path.startswith("Thumbnails/custom_processed_"):
+            print(f"Cleaned up custom processed thumbnail: {ph_path}")
+        if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/custom_") and not ph_path.startswith("/tmp/Thumbnails/custom_processed_"):
             os.remove(ph_path)
+            print(f"Cleaned up custom thumbnail: {ph_path}")
+        if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/thumb_"):
+            os.remove(ph_path)
+            print(f"Cleaned up extracted thumbnail: {ph_path}")
     except Exception as e:
         print(f"ERROR during cleanup: {e}")
 
@@ -488,9 +496,9 @@ async def upload_files(bot, sender_id, upload_type, file_path, ph_path, caption,
 async def upload_doc(bot, update):
     rkn_processing = await update.message.edit("`Processing...`")
     
-    # Creating Directory for Metadata
-    if not os.path.isdir("Metadata"):
-        os.mkdir("Metadata")
+    # Creating Directory for Metadata in /tmp
+    if not os.path.isdir("/tmp/Metadata"):
+        os.makedirs("/tmp/Metadata", exist_ok=True)
 
     user_id = int(update.message.chat.id) 
     new_name = update.message.text
@@ -509,9 +517,9 @@ async def upload_doc(bot, update):
     file = update.message.reply_to_message
     media = getattr(file, file.media.value)
     
-    # File paths for download and metadata
-    file_path = f"Renames/{new_filename}"
-    metadata_path = f"Metadata/{new_filename}"
+    # File paths for download and metadata in /tmp
+    file_path = f"/tmp/Renames/{new_filename}"
+    metadata_path = f"/tmp/Metadata/{new_filename}"
 
     await rkn_processing.edit("`Try To Download....`")
     if bot.premium and bot.uploadlimit and user_data:
@@ -534,18 +542,18 @@ async def upload_doc(bot, update):
     if is_video:
         # Add watermark to video
         await rkn_processing.edit("`Adding watermark...`")
-        watermark_path = f"Watermarked/{new_filename}"
+        watermark_path = f"/tmp/Watermarked/{new_filename}"
         
         # Create directory if it doesn't exist
-        if not os.path.isdir("Watermarked"):
-            os.mkdir("Watermarked")
+        if not os.path.isdir("/tmp/Watermarked"):
+            os.makedirs("/tmp/Watermarked", exist_ok=True)
         
         if await add_watermark(dl_path, watermark_path, Config.WATERMARK_TEXT, Config.WATERMARK_POSITION):
             await rkn_processing.edit("`Watermark added! Extracting thumbnail...`")
             # Extract thumbnail from watermarked video
-            thumb_path = f"Thumbnails/{new_filename}.jpg"
-            if not os.path.isdir("Thumbnails"):
-                os.mkdir("Thumbnails")
+            thumb_path = f"/tmp/Thumbnails/{new_filename}.jpg"
+            if not os.path.isdir("/tmp/Thumbnails"):
+                os.makedirs("/tmp/Thumbnails", exist_ok=True)
             
             if await extract_thumbnail(watermark_path, thumb_path):
                 # Use watermarked video and extracted thumbnail

@@ -144,7 +144,7 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         # FFmpeg drawtext on Windows may fail with:
         # "Fontconfig error: Cannot load default config file"
         # Fix: provide a font file directly (defaults to Arial).
-        fontfile = os.environ.get("WATERMARK_FONTFILE", r"C:\Windows\Fonts\arial.ttf")
+        fontfile = os.environ.get("WATERMARK_FONTFILE", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
         # FFmpeg filter args need special escaping on Windows:
         # - use forward slashes
         # - escape ':' as '\:'
