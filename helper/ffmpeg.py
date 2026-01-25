@@ -298,8 +298,8 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 output_file
             ])
         else:
-            # Fallback to CPU encoding with maximum speed
-            print("[WATERMARK] No hardware encoder detected, using CPU encoding")
+            # Fallback to CPU encoding with EXTREME SPEED priority
+            print("[WATERMARK] No hardware encoder detected, using CPU encoding with extreme speed")
             cmd = [
                 'ffmpeg',
                 '-hide_banner',
@@ -308,10 +308,10 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 '-i', input_file,
                 '-vf', drawtext,
                 '-c:v', 'libx264',
-                '-preset', 'superfast',  # Maximum speed preset (faster than 'faster')
-                '-crf', '23',  # Sweet spot for speed/quality (visually lossless)
-                '-tune', 'fastdecode',  # Optimize for faster decoding/encoding
-                '-x264-params', 'ref=1:bframes=0:me=dia:subme=1:trellis=0:aq-mode=0',  # Extreme speed
+                '-preset', 'ultrafast',  # Absolute fastest preset
+                '-crf', '28',  # Higher CRF = faster encoding (still good quality)
+                '-tune', 'zerolatency',  # Optimize for speed
+                '-x264-params', 'ref=1:bframes=0:me=dia:subme=0:trellis=0:aq-mode=0:8x8dct=0:cabac=0',  # Extreme speed
                 '-pix_fmt', 'yuv420p',
                 '-threads', '0',  # Use all available CPU cores
                 '-max_muxing_queue_size', '1024',  # Prevent buffer issues
