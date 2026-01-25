@@ -298,7 +298,7 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 output_file
             ])
         else:
-            # Fallback to CPU encoding (current optimized settings)
+            # Fallback to CPU encoding with optimized speed/quality balance
             print("[WATERMARK] No hardware encoder detected, using CPU encoding")
             cmd = [
                 'ffmpeg',
@@ -308,12 +308,15 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 '-i', input_file,
                 '-vf', drawtext,
                 '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-crf', '18',
+                '-preset', 'veryfast',  # Much faster than ultrafast with better quality
+                '-crf', '23',  # Sweet spot for speed/quality (visually lossless)
+                '-tune', 'fastdecode',  # Optimize for faster decoding/encoding
+                '-x264-params', 'ref=2:bframes=2:me=dia:subme=4',  # Speed optimizations
                 '-pix_fmt', 'yuv420p',
-                '-threads', '0',
-                '-movflags', '+faststart',
-                '-c:a', 'copy',
+                '-threads', '0',  # Use all available CPU cores
+                '-max_muxing_queue_size', '1024',  # Prevent buffer issues
+                '-movflags', '+faststart',  # Enable streaming
+                '-c:a', 'copy',  # Copy audio without re-encoding
                 output_file
             ]
         
