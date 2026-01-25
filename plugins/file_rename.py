@@ -76,241 +76,274 @@ async def auto_delete_message(message, delay_seconds=5):
 async def process_user_queue(client, user_id):
     """Process videos sequentially from user's queue"""
     while True:
-        # Get next message from queue
-        with queue_lock:
-            if not user_queues.get(user_id):
-                user_processing[user_id] = False
-                break
-            message = user_queues[user_id].pop(0)
-        
-        # Process the video
-        await process_single_video(client, message)
+        try:
+            # Get next message from queue
+            with queue_lock:
+                if not user_queues.get(user_id):
+                    user_processing[user_id] = False
+                    break
+                message = user_queues[user_id].pop(0)
+            
+            # Process the video with error recovery
+            try:
+                await process_single_video(client, message)
+            except Exception as e:
+                print(f"[QUEUE] Error processing video for user {user_id}: {e}")
+                import traceback
+                traceback.print_exc()
+                # Notify user about the error but continue processing queue
+                try:
+                    await message.reply_text(f"❌ Error processing this video. Continuing with next video...")
+                except:
+                    pass
+        except Exception as e:
+            print(f"[QUEUE] Critical error in queue processor for user {user_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            # Continue processing despite errors
+            continue
 
 async def process_single_video(client, message):
     """
     Process a single video with watermark, thumbnail, and caption
     """
     user_id = message.from_user.id
+    rkn_processing = None
     
-    # Get user's video processing settings
-    settings = await digital_botz.get_video_settings(user_id)
-    watermark_enabled = settings.get('watermark_enabled', True)
-    sequence_enabled = settings.get('sequence_enabled', True)
-    thumbnail_type = settings.get('thumbnail_type', 'default')
-    
-    # Get and increment video sequence counter (per user, from database)
-    # Always increment for all forwarded videos
-    video_count = await digital_botz.increment_video_sequence(user_id)
-    
-    rkn_file = getattr(message, message.media.value)
-    original_filename = rkn_file.file_name or ""
-    # If no filename or default "video.mp4", treat as no filename
-    if not original_filename or original_filename.lower() in ["video.mp4", "video"]:
-        filename = ""  # Will be handled in caption logic
-    else:
-        filename = original_filename
-    filesize = humanbytes(rkn_file.file_size)
-    
-    # Create processing message
-    rkn_processing = await message.reply_text("`📥 Downloading video...`")
-    
-    # Create directories in /tmp for cloud storage
-    if not os.path.isdir("/tmp/Watermarked"):
-        os.makedirs("/tmp/Watermarked", exist_ok=True)
-    if not os.path.isdir("/tmp/Thumbnails"):
-        os.makedirs("/tmp/Thumbnails", exist_ok=True)
-    
-    # Download video with unique timestamp to prevent file conflicts
-    # Use message ID + timestamp for guaranteed uniqueness
-    unique_id = f"{message.id}_{int(time.time() * 1000)}"
-    download_filename = filename if filename else f"video_{video_count}.mp4"
-    download_path = f"/tmp/Watermarked/temp_{unique_id}.mp4"
     try:
-        dl_path = await client.download_media(
-            message=message, 
-            file_name=download_path,
-            progress=progress_for_pyrogram,
-            progress_args=("📥 Downloading...", rkn_processing, time.time())
-        )
-    except Exception as e:
-        return await rkn_processing.edit(f"❌ Download Error: {e}")
-    
-    # Small delay to ensure file handles are released (prevents WinError 32 on Windows)
-    await asyncio.sleep(0.3)
-    
-    # Process video based on settings
-    final_video_path = dl_path  # Default to downloaded video
-    
-    # Add watermark if enabled
-    if watermark_enabled:
-        watermark_path = f"/tmp/Watermarked/watermarked_{unique_id}.mp4"
-        if await add_watermark(dl_path, watermark_path, Config.WATERMARK_TEXT, Config.WATERMARK_POSITION, rkn_processing):
-            final_video_path = watermark_path
-        else:
-            await rkn_processing.edit("❌ Failed to add watermark. Continuing without watermark...")
-            final_video_path = dl_path
-    else:
-        # No watermark, use downloaded video directly
-        final_video_path = dl_path
-    
-    # Process thumbnail based on settings
-    await rkn_processing.edit("`🖼️ Setting cover photo...`")
-    ph_path = None
-    ph_path_abs = None
-    
-    if thumbnail_type == "default":
-        # Use default cover image
-        default_path = Config.DEFAULT_THUMBNAIL
-        print(f"DEBUG: Checking default thumbnail at: {default_path}, exists={os.path.exists(default_path)}")
+        # Get user's video processing settings
+        settings = await digital_botz.get_video_settings(user_id)
+        watermark_enabled = settings.get('watermark_enabled', True)
+        sequence_enabled = settings.get('sequence_enabled', True)
+        thumbnail_type = settings.get('thumbnail_type', 'default')
         
-        if os.path.exists(default_path):
-            try:
-                print(f"DEBUG: Processing default thumbnail...")
-                img = Image.open(default_path).convert("RGB")
-                try:
-                    img.thumbnail((320, 320), Image.Resampling.LANCZOS)
-                except AttributeError:
-                    img.thumbnail((320, 320), Image.ANTIALIAS)
-                processed_thumb = f"/tmp/Thumbnails/default_processed_{int(time.time())}.jpg"
-                # Use optimal quality from start (85 is good balance of quality and size)
-                img.save(processed_thumb, "JPEG", quality=85, optimize=True, progressive=True)
-                ph_path = processed_thumb
-                print(f"DEBUG: Created processed thumbnail: {processed_thumb}, size={os.path.getsize(processed_thumb)} bytes, quality=85")
-            except Exception as e:
-                print(f"ERROR processing default thumbnail: {e}")
-                import traceback
-                traceback.print_exc()
-                ph_path = default_path if os.path.exists(default_path) else None
-                print(f"DEBUG: Falling back to raw default: {ph_path}")
+        # Get and increment video sequence counter (per user, from database)
+        # Always increment for all forwarded videos
+        video_count = await digital_botz.increment_video_sequence(user_id)
+        
+        rkn_file = getattr(message, message.media.value)
+        original_filename = rkn_file.file_name or ""
+        # If no filename or default "video.mp4", treat as no filename
+        if not original_filename or original_filename.lower() in ["video.mp4", "video"]:
+            filename = ""  # Will be handled in caption logic
         else:
-            print(f"DEBUG: Default thumbnail not found, falling back to extract from video...")
-            # Fallback: Extract thumbnail from video
-            thumb_path = f"/tmp/Thumbnails/thumb_{unique_id}.jpg"
-            if await extract_thumbnail(final_video_path, thumb_path):
-                ph_path = thumb_path if os.path.exists(thumb_path) else None
-                print(f"DEBUG: Extracted thumbnail from video: {ph_path}")
-    
-    elif thumbnail_type == "extract":
-        # Extract thumbnail from video
-        thumb_path = f"/tmp/Thumbnails/thumb_{unique_id}.jpg"
-        if await extract_thumbnail(final_video_path, thumb_path):
-            ph_path = thumb_path if os.path.exists(thumb_path) else None
-            print(f"DEBUG: Extracted thumbnail from video: {ph_path}")
-    
-    elif thumbnail_type == "custom":
-        # Use user's custom thumbnail from database
-        custom_thumb_id = await digital_botz.get_thumbnail(user_id)
-        if custom_thumb_id:
-            # Download custom thumbnail
-            try:
-                thumb_path = f"/tmp/Thumbnails/custom_{user_id}_{int(time.time())}.jpg"
-                await client.download_media(custom_thumb_id, file_name=thumb_path)
-                if os.path.exists(thumb_path):
-                    # Process to meet Telegram requirements
-                    img = Image.open(thumb_path).convert("RGB")
+            filename = original_filename
+        filesize = humanbytes(rkn_file.file_size)
+        
+        # Create processing message
+        rkn_processing = await message.reply_text("`📥 Downloading video...`")
+        
+        # Create directories in /tmp for cloud storage
+        if not os.path.isdir("/tmp/Watermarked"):
+            os.makedirs("/tmp/Watermarked", exist_ok=True)
+        if not os.path.isdir("/tmp/Thumbnails"):
+            os.makedirs("/tmp/Thumbnails", exist_ok=True)
+        
+        # Download video with unique timestamp to prevent file conflicts
+        # Use message ID + timestamp for guaranteed uniqueness
+        unique_id = f"{message.id}_{int(time.time() * 1000)}"
+        download_filename = filename if filename else f"video_{video_count}.mp4"
+        download_path = f"/tmp/Watermarked/temp_{unique_id}.mp4"
+        try:
+            dl_path = await client.download_media(
+                message=message, 
+                file_name=download_path,
+                progress=progress_for_pyrogram,
+                progress_args=("📥 Downloading...", rkn_processing, time.time())
+            )
+        except Exception as e:
+            await rkn_processing.edit(f"❌ Download Error: {e}")
+            return
+        
+        # Small delay to ensure file handles are released (prevents WinError 32 on Windows)
+        await asyncio.sleep(0.3)
+        
+        # Process video based on settings
+        final_video_path = dl_path  # Default to downloaded video
+        
+        # Add watermark if enabled
+        if watermark_enabled:
+            watermark_path = f"/tmp/Watermarked/watermarked_{unique_id}.mp4"
+            if await add_watermark(dl_path, watermark_path, Config.WATERMARK_TEXT, Config.WATERMARK_POSITION, rkn_processing):
+                final_video_path = watermark_path
+            else:
+                await rkn_processing.edit("❌ Failed to add watermark. Continuing without watermark...")
+                final_video_path = dl_path
+        else:
+            # No watermark, use downloaded video directly
+            final_video_path = dl_path
+        
+        # Process thumbnail based on settings
+        await rkn_processing.edit("`🖼️ Setting cover photo...`")
+        ph_path = None
+        ph_path_abs = None
+        
+        if thumbnail_type == "default":
+            # Use default cover image
+            default_path = Config.DEFAULT_THUMBNAIL
+            print(f"DEBUG: Checking default thumbnail at: {default_path}, exists={os.path.exists(default_path)}")
+            
+            if os.path.exists(default_path):
+                try:
+                    print(f"DEBUG: Processing default thumbnail...")
+                    img = Image.open(default_path).convert("RGB")
                     try:
                         img.thumbnail((320, 320), Image.Resampling.LANCZOS)
                     except AttributeError:
                         img.thumbnail((320, 320), Image.ANTIALIAS)
-                    processed_thumb = f"/tmp/Thumbnails/custom_processed_{user_id}_{int(time.time())}.jpg"
-                    # Use optimal quality from start
+                    processed_thumb = f"/tmp/Thumbnails/default_processed_{int(time.time())}.jpg"
+                    # Use optimal quality from start (85 is good balance of quality and size)
                     img.save(processed_thumb, "JPEG", quality=85, optimize=True, progressive=True)
                     ph_path = processed_thumb
-                    print(f"DEBUG: Using custom thumbnail: {ph_path}")
-            except Exception as e:
-                print(f"ERROR downloading custom thumbnail: {e}")
-                # Fallback to extract from video
-                thumb_path = f"/tmp/Thumbnails/{download_filename}.jpg"
+                    print(f"DEBUG: Created processed thumbnail: {processed_thumb}, size={os.path.getsize(processed_thumb)} bytes, quality=85")
+                except Exception as e:
+                    print(f"ERROR processing default thumbnail: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    ph_path = default_path if os.path.exists(default_path) else None
+                    print(f"DEBUG: Falling back to raw default: {ph_path}")
+            else:
+                print(f"DEBUG: Default thumbnail not found, falling back to extract from video...")
+                # Fallback: Extract thumbnail from video
+                thumb_path = f"/tmp/Thumbnails/thumb_{unique_id}.jpg"
                 if await extract_thumbnail(final_video_path, thumb_path):
                     ph_path = thumb_path if os.path.exists(thumb_path) else None
-    
-    # Get absolute path for thumbnail
-    if ph_path and os.path.exists(ph_path):
-        ph_path_abs = os.path.abspath(ph_path)
-        print(f"DEBUG: Using thumbnail: {ph_path_abs}")
-    
-    # Get video duration
-    duration = 0
-    try:
-        parser = createParser(final_video_path)
-        metadata = extractMetadata(parser)
-        if metadata and metadata.has("duration"):
-            duration = metadata.get('duration').seconds
-        if parser:
-            parser.close()
-    except:
-        pass
-    
-    # Build caption based on settings
-    original_caption = message.caption or ""
-    caption_text = re.sub(r'@\w+', '', original_caption).strip()
-    
-    # Always add sequence number
-    if not caption_text:
-        # No caption: Video X @Coursesbuying
-        final_caption = f"Video {video_count} @Coursesbuying"
-    else:
-        # Has caption: Video X\n[caption]\n@Coursesbuying
-        final_caption = f"Video {video_count}\n{caption_text}\n@Coursesbuying"
-    
-    # Upload video
-    await rkn_processing.edit("`📤 Uploading processed video...`")
-    
-    try:
-        print(f"DEBUG: Sending video: {final_video_path}, caption={final_caption}, thumb={ph_path_abs}")
-        await client.send_video(
-            user_id,
-            video=final_video_path,
-            thumb=ph_path_abs if ph_path_abs else None,
-            caption=final_caption,
-            duration=duration,
-            progress=progress_for_pyrogram,
-            progress_args=("📤 Uploading...", rkn_processing, time.time())
-        )
-        print(f"DEBUG: Video sent successfully!")
+                    print(f"DEBUG: Extracted thumbnail from video: {ph_path}")
         
-        # Success message
-        success_parts = []
-        if watermark_enabled:
-            success_parts.append("✨ Watermark added")
-        # Always show sequence number
-        success_parts.append(f"🔢 Sequence: {video_count}")
-        if ph_path_abs:
-            success_parts.append("🖼️ Thumbnail set")
+        elif thumbnail_type == "extract":
+            # Extract thumbnail from video
+            thumb_path = f"/tmp/Thumbnails/thumb_{unique_id}.jpg"
+            if await extract_thumbnail(final_video_path, thumb_path):
+                ph_path = thumb_path if os.path.exists(thumb_path) else None
+                print(f"DEBUG: Extracted thumbnail from video: {ph_path}")
         
-        success_msg = "✅ **Video processed successfully!**"
-        if success_parts:
-            success_msg += "\n\n" + "\n".join(success_parts)
+        elif thumbnail_type == "custom":
+            # Use user's custom thumbnail from database
+            custom_thumb_id = await digital_botz.get_thumbnail(user_id)
+            if custom_thumb_id:
+                # Download custom thumbnail
+                try:
+                    thumb_path = f"/tmp/Thumbnails/custom_{user_id}_{int(time.time())}.jpg"
+                    await client.download_media(custom_thumb_id, file_name=thumb_path)
+                    if os.path.exists(thumb_path):
+                        # Process to meet Telegram requirements
+                        img = Image.open(thumb_path).convert("RGB")
+                        try:
+                            img.thumbnail((320, 320), Image.Resampling.LANCZOS)
+                        except AttributeError:
+                            img.thumbnail((320, 320), Image.ANTIALIAS)
+                        processed_thumb = f"/tmp/Thumbnails/custom_processed_{user_id}_{int(time.time())}.jpg"
+                        # Use optimal quality from start
+                        img.save(processed_thumb, "JPEG", quality=85, optimize=True, progressive=True)
+                        ph_path = processed_thumb
+                        print(f"DEBUG: Using custom thumbnail: {ph_path}")
+                except Exception as e:
+                    print(f"ERROR downloading custom thumbnail: {e}")
+                    # Fallback to extract from video
+                    thumb_path = f"/tmp/Thumbnails/{download_filename}.jpg"
+                    if await extract_thumbnail(final_video_path, thumb_path):
+                        ph_path = thumb_path if os.path.exists(thumb_path) else None
         
-        # Edit message and schedule auto-delete after 5 seconds
-        await rkn_processing.edit(success_msg)
-        asyncio.create_task(auto_delete_message(rkn_processing, delay_seconds=5))
+        # Get absolute path for thumbnail
+        if ph_path and os.path.exists(ph_path):
+            ph_path_abs = os.path.abspath(ph_path)
+            print(f"DEBUG: Using thumbnail: {ph_path_abs}")
+        
+        # Get video duration
+        duration = 0
+        try:
+            parser = createParser(final_video_path)
+            metadata = extractMetadata(parser)
+            if metadata and metadata.has("duration"):
+                duration = metadata.get('duration').seconds
+            if parser:
+                parser.close()
+        except:
+            pass
+        
+        # Build caption based on settings
+        original_caption = message.caption or ""
+        caption_text = re.sub(r'@\w+', '', original_caption).strip()
+        
+        # Always add sequence number
+        if not caption_text:
+            # No caption: Video X @Coursesbuying
+            final_caption = f"Video {video_count} @Coursesbuying"
+        else:
+            # Has caption: Video X\n[caption]\n@Coursesbuying
+            final_caption = f"Video {video_count}\n{caption_text}\n@Coursesbuying"
+        
+        # Upload video
+        await rkn_processing.edit("`📤 Uploading processed video...`")
+        
+        try:
+            print(f"DEBUG: Sending video: {final_video_path}, caption={final_caption}, thumb={ph_path_abs}")
+            await client.send_video(
+                user_id,
+                video=final_video_path,
+                thumb=ph_path_abs if ph_path_abs else None,
+                caption=final_caption,
+                duration=duration,
+                progress=progress_for_pyrogram,
+                progress_args=("📤 Uploading...", rkn_processing, time.time())
+            )
+            print(f"DEBUG: Video sent successfully!")
+            
+            # Success message
+            success_parts = []
+            if watermark_enabled:
+                success_parts.append("✨ Watermark added")
+            # Always show sequence number
+            success_parts.append(f"🔢 Sequence: {video_count}")
+            if ph_path_abs:
+                success_parts.append("🖼️ Thumbnail set")
+            
+            success_msg = "✅ **Video processed successfully!**"
+            if success_parts:
+                success_msg += "\n\n" + "\n".join(success_parts)
+            
+            # Edit message and schedule auto-delete after 5 seconds
+            await rkn_processing.edit(success_msg)
+            asyncio.create_task(auto_delete_message(rkn_processing, delay_seconds=5))
+        except Exception as e:
+            await rkn_processing.edit(f"❌ Upload Error: {e}")
+        
+        # Cleanup temp files - aggressive cleanup for cloud deployment
+        try:
+            if os.path.exists(dl_path) and dl_path != final_video_path:
+                os.remove(dl_path)
+                print(f"Cleaned up download file: {dl_path}")
+            if os.path.exists(final_video_path) and watermark_enabled:
+                # Clean up watermarked file after upload
+                os.remove(final_video_path)
+                print(f"Cleaned up watermarked file: {final_video_path}")
+            if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/default_processed_"):
+                os.remove(ph_path)
+                print(f"Cleaned up processed thumbnail: {ph_path}")
+            if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/custom_processed_"):
+                os.remove(ph_path)
+                print(f"Cleaned up custom processed thumbnail: {ph_path}")
+            if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/custom_") and not ph_path.startswith("/tmp/Thumbnails/custom_processed_"):
+                os.remove(ph_path)
+                print(f"Cleaned up custom thumbnail: {ph_path}")
+            if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/thumb_"):
+                os.remove(ph_path)
+                print(f"Cleaned up extracted thumbnail: {ph_path}")
+        except Exception as e:
+            print(f"ERROR during cleanup: {e}")
+    
     except Exception as e:
-        await rkn_processing.edit(f"❌ Upload Error: {e}")
-    
-    # Cleanup temp files - aggressive cleanup for cloud deployment
-    try:
-        if os.path.exists(dl_path) and dl_path != final_video_path:
-            os.remove(dl_path)
-            print(f"Cleaned up download file: {dl_path}")
-        if os.path.exists(final_video_path) and watermark_enabled:
-            # Clean up watermarked file after upload
-            os.remove(final_video_path)
-            print(f"Cleaned up watermarked file: {final_video_path}")
-        if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/default_processed_"):
-            os.remove(ph_path)
-            print(f"Cleaned up processed thumbnail: {ph_path}")
-        if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/custom_processed_"):
-            os.remove(ph_path)
-            print(f"Cleaned up custom processed thumbnail: {ph_path}")
-        if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/custom_") and not ph_path.startswith("/tmp/Thumbnails/custom_processed_"):
-            os.remove(ph_path)
-            print(f"Cleaned up custom thumbnail: {ph_path}")
-        if ph_path and os.path.exists(ph_path) and ph_path.startswith("/tmp/Thumbnails/thumb_"):
-            os.remove(ph_path)
-            print(f"Cleaned up extracted thumbnail: {ph_path}")
-    except Exception as e:
-        print(f"ERROR during cleanup: {e}")
+        print(f"[ERROR] Critical error in process_single_video: {e}")
+        import traceback
+        traceback.print_exc()
+        # Try to notify user about the error
+        try:
+            if rkn_processing:
+                await rkn_processing.edit(f"❌ Error processing video: {str(e)[:100]}")
+            else:
+                await message.reply_text(f"❌ Error processing video: {str(e)[:100]}")
+        except:
+            pass
 
 @Client.on_message(filters.private & filters.video)
 async def rename_start(client, message):

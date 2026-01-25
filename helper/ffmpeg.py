@@ -345,29 +345,37 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                     
                     # Parse FFmpeg progress output (format: key=value)
                     if line_str.startswith('out_time_us='):
-                        # Extract microseconds
-                        current_time_us = int(line_str.split('=')[1])
-                        current_time_sec = current_time_us / 1000000.0
-                        
-                        # Calculate percentage
-                        if duration_seconds > 0:
-                            progress_percentage = min(100, int((current_time_sec / duration_seconds) * 100))
-                        
-                        # Update status message every 3 seconds AND only if percentage changed
-                        current_time = time.time()
-                        if status_message and (current_time - last_update_time >= 3.0) and (progress_percentage != last_progress_percentage):
-                            try:
-                                await status_message.edit(f"`🎨 Adding watermark... {progress_percentage}% complete`")
-                                last_update_time = current_time
-                                last_progress_percentage = progress_percentage
-                                print(f"[WATERMARK] Progress: {progress_percentage}%")
-                            except Exception as e:
-                                # Silently ignore MESSAGE_NOT_MODIFIED errors
-                                if "MESSAGE_NOT_MODIFIED" not in str(e):
-                                    print(f"[WATERMARK] Could not update status: {e}")
+                        try:
+                            # Extract microseconds - handle 'N/A' and other invalid values
+                            time_value = line_str.split('=')[1].strip()
+                            if time_value == 'N/A' or not time_value:
+                                continue  # Skip invalid values
+                            
+                            current_time_us = int(time_value)
+                            current_time_sec = current_time_us / 1000000.0
+                            
+                            # Calculate percentage
+                            if duration_seconds > 0:
+                                progress_percentage = min(100, int((current_time_sec / duration_seconds) * 100))
+                            
+                            # Update status message every 3 seconds AND only if percentage changed
+                            current_time = time.time()
+                            if status_message and (current_time - last_update_time >= 3.0) and (progress_percentage != last_progress_percentage):
+                                try:
+                                    await status_message.edit(f"`🎨 Adding watermark... {progress_percentage}% complete`")
+                                    last_update_time = current_time
+                                    last_progress_percentage = progress_percentage
+                                    print(f"[WATERMARK] Progress: {progress_percentage}%")
+                                except Exception as e:
+                                    # Silently ignore MESSAGE_NOT_MODIFIED errors
+                                    if "MESSAGE_NOT_MODIFIED" not in str(e):
+                                        print(f"[WATERMARK] Could not update status: {e}")
+                        except (ValueError, IndexError) as e:
+                            # Skip lines with invalid time values
+                            continue
                 
                 except Exception as e:
-                    print(f"[WATERMARK] Error parsing progress: {e}")
+                    # Don't spam logs with parsing errors
                     continue
         
         # Start progress tracking task
