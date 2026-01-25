@@ -147,7 +147,7 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         fontsize = min(60, max(20, fontsize))
         print(f"[WATERMARK] Calculated font size: {fontsize}")
 
-        # Get duration (for scrolling watermark)
+        # Get duration (for scrolling watermark and progress tracking)
         duration_seconds = 0.0
         try:
             dur_out = subprocess.check_output([
@@ -261,6 +261,7 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 'ffmpeg',
                 '-hide_banner',
                 '-y',
+                '-progress', 'pipe:1',  # Enable progress output to stdout
                 '-i', input_file,
                 '-vf', drawtext,
                 '-c:v', hw_encoder,
@@ -303,6 +304,7 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 'ffmpeg',
                 '-hide_banner',
                 '-y',
+                '-progress', 'pipe:1',  # Enable progress output to stdout
                 '-i', input_file,
                 '-vf', drawtext,
                 '-c:v', 'libx264',
@@ -318,13 +320,68 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         
         print(f"[WATERMARK] FFmpeg command: {' '.join(cmd)}")
         
-        # Execute FFmpeg command
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        # Execute FFmpeg command with progress tracking
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        # Track progress with updates every 3 seconds
+        last_update_time = time.time()
+        progress_percentage = 0
+        
+        async def read_progress():
+            nonlocal progress_percentage, last_update_time
+            current_time_us = 0
+            
+            async for line in process.stdout:
+                try:
+                    line_str = line.decode('utf-8', errors='ignore').strip()
+                    
+                    # Parse FFmpeg progress output (format: key=value)
+                    if line_str.startswith('out_time_us='):
+                        # Extract microseconds
+                        current_time_us = int(line_str.split('=')[1])
+                        current_time_sec = current_time_us / 1000000.0
+                        
+                        # Calculate percentage
+                        if duration_seconds > 0:
+                            progress_percentage = min(100, int((current_time_sec / duration_seconds) * 100))
+                        
+                        # Update status message every 3 seconds
+                        current_time = time.time()
+                        if status_message and (current_time - last_update_time >= 3.0):
+                            try:
+                                await status_message.edit(f"`🎨 Adding watermark... {progress_percentage}% complete`")
+                                last_update_time = current_time
+                                print(f"[WATERMARK] Progress: {progress_percentage}%")
+                            except Exception as e:
+                                print(f"[WATERMARK] Could not update status: {e}")
+                
+                except Exception as e:
+                    print(f"[WATERMARK] Error parsing progress: {e}")
+                    continue
+        
+        # Start progress tracking task
+        progress_task = asyncio.create_task(read_progress())
+        
+        # Wait for FFmpeg to complete
+        stderr_output = await process.stderr.read()
+        await process.wait()
+        
+        # Wait for progress task to finish
+        await progress_task
+        
+        # Check if FFmpeg succeeded
+        if process.returncode != 0:
+            stderr_text = stderr_output.decode('utf-8', errors='ignore')
+            print(f"[WATERMARK] ✗ FFmpeg Error (exit code {process.returncode}):")
+            print(f"[WATERMARK] stderr: {stderr_text}")
+            return False
         
         # Log success
         print(f"[WATERMARK] ✓ Watermark added successfully")
-        if result.stdout:
-            print(f"[WATERMARK] FFmpeg stdout: {result.stdout}")
         
         # Verify output file exists
         if os.path.exists(output_file):
@@ -344,11 +401,6 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         
         return True
         
-    except subprocess.CalledProcessError as e:
-        print(f"[WATERMARK] ✗ FFmpeg Error (exit code {e.returncode}):")
-        print(f"[WATERMARK] stderr: {e.stderr}")
-        print(f"[WATERMARK] stdout: {e.stdout}")
-        return False
     except Exception as e:
         print(f"[WATERMARK] ✗ Unexpected error adding watermark:")
         print(f"[WATERMARK] Error type: {type(e).__name__}")
