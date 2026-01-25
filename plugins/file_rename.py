@@ -64,6 +64,15 @@ user_queues = {}  # {user_id: [messages]}
 user_processing = {}  # {user_id: bool}
 queue_lock = threading.Lock()
 
+# Auto-delete helper function
+async def auto_delete_message(message, delay_seconds=5):
+    """Delete a message after a specified delay"""
+    try:
+        await asyncio.sleep(delay_seconds)
+        await message.delete()
+    except Exception as e:
+        print(f"Could not delete message: {e}")
+
 async def process_user_queue(client, user_id):
     """Process videos sequentially from user's queue"""
     while True:
@@ -273,7 +282,9 @@ async def process_single_video(client, message):
         if success_parts:
             success_msg += "\n\n" + "\n".join(success_parts)
         
+        # Edit message and schedule auto-delete after 5 seconds
         await rkn_processing.edit(success_msg)
+        asyncio.create_task(auto_delete_message(rkn_processing, delay_seconds=5))
     except Exception as e:
         await rkn_processing.edit(f"❌ Upload Error: {e}")
     
@@ -322,7 +333,9 @@ async def rename_start(client, message):
     
     # Notify user about queue position (only if there are other videos in queue)
     if queue_size > 1:
-        await message.reply_text(f"📋 **Added to queue**\n\nPosition: {queue_size}\n\nYour video will be processed in order.")
+        queue_msg = await message.reply_text(f"📋 **Added to queue**\n\nPosition: {queue_size}\n\nYour video will be processed in order.")
+        # Auto-delete queue message after 3 seconds
+        asyncio.create_task(auto_delete_message(queue_msg, delay_seconds=3))
 
 @Client.on_message(filters.private & (filters.audio | filters.document))
 async def rename_start_other(client, message):
