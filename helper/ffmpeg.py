@@ -298,7 +298,7 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 output_file
             ])
         else:
-            # Fallback to CPU encoding with optimized speed/quality balance
+            # Fallback to CPU encoding with maximum speed optimization
             print("[WATERMARK] No hardware encoder detected, using CPU encoding")
             cmd = [
                 'ffmpeg',
@@ -308,10 +308,10 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 '-i', input_file,
                 '-vf', drawtext,
                 '-c:v', 'libx264',
-                '-preset', 'veryfast',  # Much faster than ultrafast with better quality
+                '-preset', 'faster',  # Faster than veryfast, still good quality
                 '-crf', '23',  # Sweet spot for speed/quality (visually lossless)
                 '-tune', 'fastdecode',  # Optimize for faster decoding/encoding
-                '-x264-params', 'ref=2:bframes=2:me=dia:subme=4',  # Speed optimizations
+                '-x264-params', 'ref=1:bframes=1:me=hex:subme=2:trellis=0',  # Maximum speed
                 '-pix_fmt', 'yuv420p',
                 '-threads', '0',  # Use all available CPU cores
                 '-max_muxing_queue_size', '1024',  # Prevent buffer issues
@@ -332,10 +332,11 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         
         # Track progress with updates every 3 seconds
         last_update_time = time.time()
+        last_progress_percentage = -1  # Track last percentage to avoid duplicate updates
         progress_percentage = 0
         
         async def read_progress():
-            nonlocal progress_percentage, last_update_time
+            nonlocal progress_percentage, last_update_time, last_progress_percentage
             current_time_us = 0
             
             async for line in process.stdout:
@@ -352,15 +353,18 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                         if duration_seconds > 0:
                             progress_percentage = min(100, int((current_time_sec / duration_seconds) * 100))
                         
-                        # Update status message every 3 seconds
+                        # Update status message every 3 seconds AND only if percentage changed
                         current_time = time.time()
-                        if status_message and (current_time - last_update_time >= 3.0):
+                        if status_message and (current_time - last_update_time >= 3.0) and (progress_percentage != last_progress_percentage):
                             try:
                                 await status_message.edit(f"`🎨 Adding watermark... {progress_percentage}% complete`")
                                 last_update_time = current_time
+                                last_progress_percentage = progress_percentage
                                 print(f"[WATERMARK] Progress: {progress_percentage}%")
                             except Exception as e:
-                                print(f"[WATERMARK] Could not update status: {e}")
+                                # Silently ignore MESSAGE_NOT_MODIFIED errors
+                                if "MESSAGE_NOT_MODIFIED" not in str(e):
+                                    print(f"[WATERMARK] Could not update status: {e}")
                 
                 except Exception as e:
                     print(f"[WATERMARK] Error parsing progress: {e}")
