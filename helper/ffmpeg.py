@@ -46,6 +46,7 @@ async def change_metadata(input_file, output_file, metadata):
 def detect_hardware_encoder():
     """
     Detect available hardware encoders for faster encoding
+    Actually tests if the encoder works, not just if it's listed
     Returns: (encoder_name, preset_equivalent) or (None, None) if no GPU available
     """
     try:
@@ -57,19 +58,54 @@ def detect_hardware_encoder():
         encoders = result.stdout
         
         # Priority order: NVIDIA > Intel > AMD (based on quality/speed)
-        if 'h264_nvenc' in encoders:
-            # NVIDIA GPU encoding - excellent quality and speed
-            return ('h264_nvenc', 'p1')  # p1 = fastest preset for nvenc
-        elif 'h264_qsv' in encoders:
-            # Intel Quick Sync - good quality and speed
-            return ('h264_qsv', 'veryfast')  # veryfast for qsv
-        elif 'h264_amf' in encoders:
-            # AMD AMF - good quality and speed
-            return ('h264_amf', 'speed')  # speed preset for amf
+        # Test each encoder to verify it actually works
         
+        if 'h264_nvenc' in encoders:
+            # Test NVIDIA NVENC by trying to encode a dummy frame
+            print("[WATERMARK] Testing h264_nvenc availability...")
+            test_result = subprocess.run(
+                ['ffmpeg', '-hide_banner', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1',
+                 '-c:v', 'h264_nvenc', '-f', 'null', '-'],
+                capture_output=True, text=True, timeout=3
+            )
+            if test_result.returncode == 0:
+                print("[WATERMARK] ✓ h264_nvenc is available and working")
+                return ('h264_nvenc', 'p1')  # p1 = fastest preset for nvenc
+            else:
+                print(f"[WATERMARK] ✗ h264_nvenc listed but not working: {test_result.stderr[:200]}")
+        
+        if 'h264_qsv' in encoders:
+            # Test Intel Quick Sync
+            print("[WATERMARK] Testing h264_qsv availability...")
+            test_result = subprocess.run(
+                ['ffmpeg', '-hide_banner', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1',
+                 '-c:v', 'h264_qsv', '-f', 'null', '-'],
+                capture_output=True, text=True, timeout=3
+            )
+            if test_result.returncode == 0:
+                print("[WATERMARK] ✓ h264_qsv is available and working")
+                return ('h264_qsv', 'veryfast')  # veryfast for qsv
+            else:
+                print(f"[WATERMARK] ✗ h264_qsv listed but not working: {test_result.stderr[:200]}")
+        
+        if 'h264_amf' in encoders:
+            # Test AMD AMF
+            print("[WATERMARK] Testing h264_amf availability...")
+            test_result = subprocess.run(
+                ['ffmpeg', '-hide_banner', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1',
+                 '-c:v', 'h264_amf', '-f', 'null', '-'],
+                capture_output=True, text=True, timeout=3
+            )
+            if test_result.returncode == 0:
+                print("[WATERMARK] ✓ h264_amf is available and working")
+                return ('h264_amf', 'speed')  # speed preset for amf
+            else:
+                print(f"[WATERMARK] ✗ h264_amf listed but not working: {test_result.stderr[:200]}")
+        
+        print("[WATERMARK] No working hardware encoder found, will use CPU encoding")
         return (None, None)  # No hardware encoder available
     except Exception as e:
-        print(f"Hardware encoder detection failed: {e}")
+        print(f"[WATERMARK] Hardware encoder detection failed: {e}")
         return (None, None)
 
 
