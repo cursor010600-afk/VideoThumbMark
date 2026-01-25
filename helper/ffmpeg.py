@@ -381,12 +381,30 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         # Start progress tracking task
         progress_task = asyncio.create_task(read_progress())
         
-        # Wait for FFmpeg to complete
-        stderr_output = await process.stderr.read()
-        await process.wait()
+        # Wait for FFmpeg to complete with timeout protection (30 minutes max)
+        try:
+            stderr_output = await asyncio.wait_for(
+                process.stderr.read(),
+                timeout=1800  # 30 minutes timeout
+            )
+            await asyncio.wait_for(
+                process.wait(),
+                timeout=10  # 10 seconds to finish after stderr read
+            )
+        except asyncio.TimeoutError:
+            print(f"[WATERMARK] ✗ FFmpeg timeout - killing process")
+            try:
+                process.kill()
+                await process.wait()
+            except:
+                pass
+            return False
         
         # Wait for progress task to finish
-        await progress_task
+        try:
+            await asyncio.wait_for(progress_task, timeout=5)
+        except asyncio.TimeoutError:
+            pass  # Progress task can timeout, it's okay
         
         # Check if FFmpeg succeeded
         if process.returncode != 0:

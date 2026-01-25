@@ -78,6 +78,7 @@ class DigitalRenameBot(Client):
             sleep_threshold=5,
             max_concurrent_transmissions=10  # Reduced from 50 for stability
         )
+        self.first_startup = True  # Track if this is the first startup
                 
          
     async def start(self):
@@ -142,22 +143,26 @@ class DigitalRenameBot(Client):
             print(f"{me.first_name} Is Started!")
 
         
-        for id in Config.ADMIN:
-            if Config.STRING_SESSION:
-                try: await self.send_message(id, f"𝟮𝗚𝗕+ ғɪʟᴇ sᴜᴘᴘᴏʀᴛ ʜᴀs ʙᴇᴇɴ ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ʙᴏᴛ.\n\nNote: 𝐓𝐞𝐥𝐞𝐠𝐫𝐚𝐦 𝐩𝐫𝐞𝐦𝐢𝐮𝐦 𝐚𝐜𝐜𝐨𝐮𝐧𝐭 𝐬𝐭𝐫𝐢𝐧𝐠 𝐬𝐞𝐬𝐬𝐢𝐨𝐧 𝐫𝐞𝐪𝐮𝐢𝐫𝐞𝐝 𝐓𝐡𝐞𝐧 𝐬𝐮𝐩𝐩𝐨𝐫𝐭𝐬 𝟐𝐆𝐁+ 𝐟𝐢𝐥𝐞𝐬.\n\n**__{me.first_name}  Iꜱ Sᴛᴀʀᴛᴇᴅ.....✨️__**")                                
-                except: pass
-            else:
-                try: await self.send_message(id, f"𝟮𝗚𝗕- ғɪʟᴇ sᴜᴘᴘᴏʀᴛ ʜᴀs ʙᴇᴇɴ ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ʙᴏᴛ.\n\n**__{me.first_name}  Iꜱ Sᴛᴀʀᴛᴇᴅ.....✨️__**")                                
-                except: pass
-                    
-        if Config.LOG_CHANNEL:
-            try:
-                curr = datetime.datetime.now(pytz.timezone("Asia/Kolkata"))
-                date = curr.strftime('%d %B, %Y')
-                time = curr.strftime('%I:%M:%S %p')
-                await self.send_message(Config.LOG_CHANNEL, f"**__{me.mention} Is Restarted !!**\n\nDate : `{date}`\nTime : `{time}`\nTimezone : `Asia/Kolkata`\n\nVersion : `v{__version__} (Layer {layer})`")                                
-            except Exception as e:
-                print(f"Log channel error (ignored): {e}")
+        # Only send startup messages on FIRST startup, not on reconnections
+        if self.first_startup:
+            self.first_startup = False
+            
+            for id in Config.ADMIN:
+                if Config.STRING_SESSION:
+                    try: await self.send_message(id, f"𝟮𝗚𝗕+ ғɪʟᴇ sᴜᴘᴘᴏʀᴛ ʜᴀs ʙᴇᴇɴ ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ʙᴏᴛ.\n\nNote: 𝐓𝐞𝐥𝐞𝐠𝐫𝐚𝐦 𝐩𝐫𝐞𝐦𝐢𝐮𝐦 𝐚𝐜𝐜𝐨𝐮𝐧𝐭 𝐬𝐭𝐫𝐢𝐧𝐠 𝐬𝐞𝐬𝐬𝐢𝐨𝐧 𝐫𝐞𝐪𝐮𝐢𝐫𝐞𝐝 𝐓𝐡𝐞𝐧 𝐬𝐮𝐩𝐩𝐨𝐫𝐭𝐬 𝟐𝐆𝐁+ 𝐟𝐢𝐥𝐞𝐬.\n\n**__{me.first_name}  Iꜱ Sᴛᴀʀᴛᴇᴅ.....✨️__**")                                
+                    except: pass
+                else:
+                    try: await self.send_message(id, f"𝟮𝗚𝗕- ғɪʟᴇ sᴜᴘᴘᴏʀᴛ ʜᴀs ʙᴇᴇɴ ᴀᴅᴅᴇᴅ ᴛᴏ ʏᴏᴜʀ ʙᴏᴛ.\n\n**__{me.first_name}  Iꜱ Sᴛᴀʀᴛᴇᴅ.....✨️__**")                                
+                    except: pass
+                        
+            if Config.LOG_CHANNEL:
+                try:
+                    curr = datetime.datetime.now(pytz.timezone("Asia/Kolkata"))
+                    date = curr.strftime('%d %B, %Y')
+                    time = curr.strftime('%I:%M:%S %p')
+                    await self.send_message(Config.LOG_CHANNEL, f"**__{me.mention} Is Restarted !!**\n\nDate : `{date}`\nTime : `{time}`\nTimezone : `Asia/Kolkata`\n\nVersion : `v{__version__} (Layer {layer})`")                                
+                except Exception as e:
+                    print(f"Log channel error (ignored): {e}")
 
     async def stop(self, *args):
         for id in Config.ADMIN:
