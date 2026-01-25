@@ -298,7 +298,7 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 output_file
             ])
         else:
-            # Fallback to CPU encoding with maximum speed optimization
+            # Fallback to CPU encoding with maximum speed
             print("[WATERMARK] No hardware encoder detected, using CPU encoding")
             cmd = [
                 'ffmpeg',
@@ -308,10 +308,10 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 '-i', input_file,
                 '-vf', drawtext,
                 '-c:v', 'libx264',
-                '-preset', 'faster',  # Faster than veryfast, still good quality
+                '-preset', 'superfast',  # Maximum speed preset (faster than 'faster')
                 '-crf', '23',  # Sweet spot for speed/quality (visually lossless)
                 '-tune', 'fastdecode',  # Optimize for faster decoding/encoding
-                '-x264-params', 'ref=1:bframes=1:me=hex:subme=2:trellis=0',  # Maximum speed
+                '-x264-params', 'ref=1:bframes=0:me=dia:subme=1:trellis=0:aq-mode=0',  # Extreme speed
                 '-pix_fmt', 'yuv420p',
                 '-threads', '0',  # Use all available CPU cores
                 '-max_muxing_queue_size', '1024',  # Prevent buffer issues
@@ -381,24 +381,9 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         # Start progress tracking task
         progress_task = asyncio.create_task(read_progress())
         
-        # Wait for FFmpeg to complete with timeout protection (30 minutes max)
-        try:
-            stderr_output = await asyncio.wait_for(
-                process.stderr.read(),
-                timeout=1800  # 30 minutes timeout
-            )
-            await asyncio.wait_for(
-                process.wait(),
-                timeout=10  # 10 seconds to finish after stderr read
-            )
-        except asyncio.TimeoutError:
-            print(f"[WATERMARK] ✗ FFmpeg timeout - killing process")
-            try:
-                process.kill()
-                await process.wait()
-            except:
-                pass
-            return False
+        # Wait for FFmpeg to complete - no timeout, wait as long as needed
+        stderr_output = await process.stderr.read()
+        await process.wait()
         
         # Wait for progress task to finish
         try:
