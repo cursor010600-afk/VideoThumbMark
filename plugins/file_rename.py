@@ -143,7 +143,7 @@ async def process_single_video(client, message):
         # Use message ID + timestamp for guaranteed uniqueness
         unique_id = f"{message.id}_{int(time.time() * 1000)}"
         download_filename = filename if filename else f"video_{video_count}.mp4"
-        download_path = f"/tmp/Watermarked/temp_{unique_id}.mp4"
+        download_path = os.path.abspath(f"./tmp/Watermarked/temp_{unique_id}.mp4")
         try:
             dl_path = await client.download_media(
                 message=message, 
@@ -163,7 +163,7 @@ async def process_single_video(client, message):
         
         # Add watermark if enabled
         if watermark_enabled:
-            watermark_path = f"/tmp/Watermarked/watermarked_{unique_id}.mp4"
+            watermark_path = os.path.abspath(f"./tmp/Watermarked/watermarked_{unique_id}.mp4")
             if await add_watermark(dl_path, watermark_path, Config.WATERMARK_TEXT, Config.WATERMARK_POSITION, rkn_processing):
                 final_video_path = watermark_path
             else:

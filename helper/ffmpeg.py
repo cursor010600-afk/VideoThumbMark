@@ -116,6 +116,10 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
     status_message: optional message object to update with progress
     """
     try:
+        # Normalize and use absolute paths for Windows stability
+        input_file = os.path.abspath(input_file).replace("\\", "/")
+        output_file = os.path.abspath(output_file).replace("\\", "/")
+        
         # Update status at start
         if status_message:
             try:
@@ -140,14 +144,12 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
         height = probe_data['streams'][0]['height']
         print(f"[WATERMARK] Video dimensions: {width}x{height}")
 
-        # Calculate consistent font size based on video height (3.5% of height for good visibility)
-        # This ensures same relative size across all videos
-        fontsize = max(20, int(height * 0.035))  # Minimum 20px, scales with video height
-        # Clamp to reasonable range (20-60px) for visibility
+        # Calculate consistent font size based on video height
+        fontsize = max(20, int(height * 0.035))
         fontsize = min(60, max(20, fontsize))
         print(f"[WATERMARK] Calculated font size: {fontsize}")
 
-        # Get duration (for scrolling watermark and progress tracking)
+        # Get duration for scrolling watermark
         duration_seconds = 0.0
         try:
             dur_out = subprocess.check_output([
@@ -162,40 +164,37 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
             print(f"[WATERMARK] Could not get duration: {e}")
             duration_seconds = 0.0
         
-        # Calculate watermark position
+        # Calculate watermark position formula
         if position == "scroll-lr-center":
-            # Scroll Left -> Right across the center of the video over the whole duration
-            # x from 0 to (W-text_w)
-            # y centered
             d = duration_seconds if duration_seconds > 0 else 1.0
             x = f"(W-text_w)*t/{d}"
             y = f"(H-text_h)/2"
         elif position == "top-left":
-            x = f"10"  # 10 pixels from left
-            y = f"10"  # 10 pixels from top
+            x = "10"
+            y = "10"
         elif position == "top-right":
-            x = f"W-w-10"  # 10 pixels from right
-            y = f"10"  # 10 pixels from top
+            x = "W-w-10"
+            y = "10"
         elif position == "bottom-left":
-            x = f"10"  # 10 pixels from left
-            y = f"H-h-10"  # 10 pixels from bottom
+            x = "10"
+            y = "H-h-10"
         elif position == "bottom-right":
-            x = f"W-w-10"  # 10 pixels from right
-            y = f"H-h-10"  # 10 pixels from bottom
+            x = "W-w-10"
+            y = "H-h-10"
         else:  # center
-            x = f"(W-w)/2"
-            y = f"(H-h)/2"
+            x = "(W-w)/2"
+            y = "(H-h)/2"
         
         print(f"[WATERMARK] Position formula - x: {x}, y: {y}")
         
-        # Font file detection with fallback options
-        # Priority: Environment variable > DejaVu > Liberation > Fallback to system default
+        # Font file detection with Windows support
         fontfile_candidates = [
             os.environ.get("WATERMARK_FONTFILE", ""),
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/times.ttf",
+            "C:/Windows/Fonts/calibri.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         ]
         
         fontfile = None
@@ -204,227 +203,138 @@ async def add_watermark(input_file, output_file, watermark_text="@Coursesbuying"
                 fontfile = candidate
                 print(f"[WATERMARK] ✓ Found font file: {fontfile}")
                 break
-            elif candidate:
-                print(f"[WATERMARK] ✗ Font not found: {candidate}")
         
         if not fontfile:
             print("[WATERMARK] WARNING: No font file found, FFmpeg will use system default")
-            print("[WATERMARK] This may cause the watermark to fail on some systems")
-            # Use empty string to let FFmpeg try system default
-            fontfile = ""
-        
-        # FFmpeg filter args need special escaping:
-        # - use forward slashes
-        # - escape ':' as '\:'
-        if fontfile:
-            fontfile_ffmpeg = fontfile.replace("\\", "/").replace(":", "\\:")
-        else:
             fontfile_ffmpeg = ""
+        else:
+            fontfile_ffmpeg = fontfile.replace("\\", "/").replace(":", "\\:")
 
         # Basic escaping for drawtext
         escaped_text = watermark_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
-
-        # Box border width scales with font size for better visibility
         box_border = max(3, int(fontsize * 0.15))
 
-        # Build drawtext filter - only include fontfile if we have one
+        # Build drawtext filter
+        drawtext_parts = [f"text='{escaped_text}'", f"fontcolor=white@0.9", f"fontsize={fontsize}", f"x={x}", f"y={y}", f"box=1", f"boxcolor=black@0.5", f"boxborderw={box_border}"]
         if fontfile_ffmpeg:
-            drawtext = (
-                f"drawtext="
-                f"fontfile='{fontfile_ffmpeg}':"
-                f"text='{escaped_text}':"
-                f"fontcolor=white@0.9:fontsize={fontsize}:"
-                f"x={x}:y={y}:"
-                f"box=1:boxcolor=black@0.5:boxborderw={box_border}"
-            )
-        else:
-            # No fontfile - let FFmpeg use system default
-            drawtext = (
-                f"drawtext="
-                f"text='{escaped_text}':"
-                f"fontcolor=white@0.9:fontsize={fontsize}:"
-                f"x={x}:y={y}:"
-                f"box=1:boxcolor=black@0.5:boxborderw={box_border}"
-            )
+            drawtext_parts.insert(0, f"fontfile='{fontfile_ffmpeg}'")
         
+        drawtext = f"drawtext=" + ":".join(drawtext_parts)
         print(f"[WATERMARK] Drawtext filter: {drawtext}")
 
-        # Detect hardware encoder for faster processing
+        # Detect hardware encoder
         hw_encoder, hw_preset = detect_hardware_encoder()
         
+        # Preparation for retry logic
+        attempts = []
         if hw_encoder:
-            # Use hardware acceleration (GPU encoding)
-            print(f"[WATERMARK] Using hardware encoder: {hw_encoder}")
-            
-            # Build command with hardware encoder
-            cmd = [
-                'ffmpeg',
-                '-hide_banner',
-                '-y',
-                '-progress', 'pipe:1',  # Enable progress output to stdout
+            # First attempt with hardware encoder
+            hw_cmd = [
+                'ffmpeg', '-hide_banner', '-y', '-progress', 'pipe:1',
                 '-i', input_file,
                 '-vf', drawtext,
-                '-c:v', hw_encoder,
+                '-c:v', hw_encoder
             ]
             
-            # Add encoder-specific quality settings
             if hw_encoder == 'h264_nvenc':
-                # NVIDIA NVENC settings
-                cmd.extend([
-                    '-preset', hw_preset,  # p1 = fastest
-                    '-cq', '18',  # Constant quality (equivalent to CRF 18)
-                    '-rc', 'vbr',  # Variable bitrate for better quality
-                ])
+                hw_cmd.extend(['-preset', hw_preset, '-cq', '18', '-rc', 'vbr'])
             elif hw_encoder == 'h264_qsv':
-                # Intel Quick Sync settings
-                cmd.extend([
-                    '-preset', hw_preset,  # veryfast
-                    '-global_quality', '18',  # Quality level (lower = better)
-                ])
+                # Explicitly set pix_fmt for QSV to avoid crash/warnings
+                hw_cmd.extend(['-preset', hw_preset, '-global_quality', '18', '-pix_fmt', 'nv12'])
             elif hw_encoder == 'h264_amf':
-                # AMD AMF settings
-                cmd.extend([
-                    '-quality', 'quality',  # Quality mode
-                    '-rc', 'vbr_latency',  # Variable bitrate
-                    '-qp_i', '18',  # I-frame quality
-                    '-qp_p', '18',  # P-frame quality
-                ])
+                hw_cmd.extend(['-quality', 'quality', '-rc', 'vbr_latency', '-qp_i', '18', '-qp_p', '18'])
             
-            # Common settings for all hardware encoders
-            cmd.extend([
-                '-pix_fmt', 'yuv420p',
-                '-movflags', '+faststart',
-                '-c:a', 'copy',
-                output_file
-            ])
-        else:
-            # Fallback to CPU encoding with EXTREME SPEED priority
-            print("[WATERMARK] No hardware encoder detected, using CPU encoding with extreme speed")
-            cmd = [
-                'ffmpeg',
-                '-hide_banner',
-                '-y',
-                '-progress', 'pipe:1',  # Enable progress output to stdout
-                '-i', input_file,
-                '-vf', drawtext,
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast',  # Absolute fastest preset
-                '-crf', '28',  # Higher CRF = faster encoding (still good quality)
-                '-tune', 'zerolatency',  # Optimize for speed
-                '-x264-params', 'ref=1:bframes=0:me=dia:subme=0:trellis=0:aq-mode=0:8x8dct=0:cabac=0',  # Extreme speed
-                '-pix_fmt', 'yuv420p',
-                '-threads', '0',  # Use all available CPU cores
-                '-max_muxing_queue_size', '1024',  # Prevent buffer issues
-                '-movflags', '+faststart',  # Enable streaming
-                '-c:a', 'copy',  # Copy audio without re-encoding
-                output_file
-            ]
-        
-        
-        print(f"[WATERMARK] FFmpeg command: {' '.join(cmd)}")
-        
-        # Execute FFmpeg command with progress tracking
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        # Track progress with updates every 3 seconds
-        last_update_time = time.time()
-        last_progress_percentage = -1  # Track last percentage to avoid duplicate updates
-        progress_percentage = 0
-        
-        async def read_progress():
-            nonlocal progress_percentage, last_update_time, last_progress_percentage
-            current_time_us = 0
+            hw_cmd.extend(['-movflags', '+faststart', '-c:a', 'copy', output_file])
+            attempts.append(("Hardware Acceleration", hw_cmd))
+
+        # Always add CPU fallback (or primary if no HW encoder)
+        cpu_cmd = [
+            'ffmpeg', '-hide_banner', '-y', '-progress', 'pipe:1',
+            '-i', input_file,
+            '-vf', drawtext,
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '28',
+            '-pix_fmt', 'yuv420p',
+            '-movflags', '+faststart',
+            '-c:a', 'copy',
+            output_file
+        ]
+        attempts.append(("CPU Encoding (High Speed)", cpu_cmd))
+
+        # Execute with retry logic
+        for attempt_name, cmd in attempts:
+            print(f"[WATERMARK] Attempting with {attempt_name}...")
+            print(f"[WATERMARK] FFmpeg command: {' '.join(cmd)}")
             
-            async for line in process.stdout:
-                try:
-                    line_str = line.decode('utf-8', errors='ignore').strip()
-                    
-                    # Parse FFmpeg progress output (format: key=value)
-                    if line_str.startswith('out_time_us='):
-                        try:
-                            # Extract microseconds - handle 'N/A' and other invalid values
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # Progress tracking
+            last_update_time = time.time()
+            last_progress_percentage = -1
+            progress_percentage = 0
+            
+            async def read_progress():
+                nonlocal progress_percentage, last_update_time, last_progress_percentage
+                async for line in process.stdout:
+                    try:
+                        line_str = line.decode('utf-8', errors='ignore').strip()
+                        if line_str.startswith('out_time_us='):
                             time_value = line_str.split('=')[1].strip()
-                            if time_value == 'N/A' or not time_value:
-                                continue  # Skip invalid values
+                            if time_value == 'N/A' or not time_value: continue
                             
-                            current_time_us = int(time_value)
-                            current_time_sec = current_time_us / 1000000.0
-                            
-                            # Calculate percentage
+                            current_time_sec = int(time_value) / 1000000.0
                             if duration_seconds > 0:
                                 progress_percentage = min(100, int((current_time_sec / duration_seconds) * 100))
                             
-                            # Update status message every 3 seconds AND only if percentage changed
-                            current_time = time.time()
-                            if status_message and (current_time - last_update_time >= 3.0) and (progress_percentage != last_progress_percentage):
+                            c_time = time.time()
+                            if status_message and (c_time - last_update_time >= 3.0) and (progress_percentage != last_progress_percentage):
                                 try:
-                                    await status_message.edit(f"`🎨 Adding watermark... {progress_percentage}% complete`")
-                                    last_update_time = current_time
+                                    await status_message.edit(f"`🎨 Adding watermark ({attempt_name})... {progress_percentage}%`")
+                                    last_update_time = c_time
                                     last_progress_percentage = progress_percentage
-                                    print(f"[WATERMARK] Progress: {progress_percentage}%")
-                                except Exception as e:
-                                    # Silently ignore MESSAGE_NOT_MODIFIED errors
-                                    if "MESSAGE_NOT_MODIFIED" not in str(e):
-                                        print(f"[WATERMARK] Could not update status: {e}")
-                        except (ValueError, IndexError) as e:
-                            # Skip lines with invalid time values
-                            continue
-                
-                except Exception as e:
-                    # Don't spam logs with parsing errors
-                    continue
-        
-        # Start progress tracking task
-        progress_task = asyncio.create_task(read_progress())
-        
-        # Wait for FFmpeg to complete - no timeout, wait as long as needed
-        stderr_output = await process.stderr.read()
-        await process.wait()
-        
-        # Wait for progress task to finish
-        try:
-            await asyncio.wait_for(progress_task, timeout=5)
-        except asyncio.TimeoutError:
-            pass  # Progress task can timeout, it's okay
-        
-        # Check if FFmpeg succeeded
-        if process.returncode != 0:
+                                except: pass
+                    except: continue
+
+            progress_task = asyncio.create_task(read_progress())
+            stderr_output = await process.stderr.read()
+            await process.wait()
+            
+            try: await asyncio.wait_for(progress_task, timeout=2)
+            except: pass
+            
+            if process.returncode == 0 and os.path.exists(output_file) and os.path.getsize(output_file) > 1000:
+                print(f"[WATERMARK] ✓ Success with {attempt_name}")
+                if status_message:
+                    try: await status_message.edit("`✅ Watermark added successfully`")
+                    except: pass
+                return True
+            
+            # If we're here, this attempt failed
             stderr_text = stderr_output.decode('utf-8', errors='ignore')
-            print(f"[WATERMARK] ✗ FFmpeg Error (exit code {process.returncode}):")
-            print(f"[WATERMARK] stderr: {stderr_text}")
-            return False
-        
-        # Log success
-        print(f"[WATERMARK] ✓ Watermark added successfully")
-        
-        # Verify output file exists
-        if os.path.exists(output_file):
-            output_size = os.path.getsize(output_file)
-            print(f"[WATERMARK] Output file size: {output_size} bytes")
-        else:
-            print(f"[WATERMARK] ERROR: Output file not created!")
-            return False
-        
-        # Update status at end
-        if status_message:
-            try:
-                await status_message.edit("`✅ Watermark added successfully`")
-                await asyncio.sleep(1)  # Brief pause to show success message
-            except:
-                pass
-        
-        return True
+            print(f"[WATERMARK] ✗ {attempt_name} failed (code {process.returncode})")
+            print(f"[WATERMARK] stderr: {stderr_text[:500]}...")
+            
+            if attempt_name == attempts[-1][0]:
+                # Last attempt failed
+                return False
+            else:
+                print(f"[WATERMARK] Retrying with next method...")
+                if status_message:
+                    try: await status_message.edit("`⚠️ Primary method failed, retrying...`")
+                    except: pass
+                await asyncio.sleep(1)
+
+        return False
         
     except Exception as e:
-        print(f"[WATERMARK] ✗ Unexpected error adding watermark:")
-        print(f"[WATERMARK] Error type: {type(e).__name__}")
-        print(f"[WATERMARK] Error message: {e}")
+        print(f"[WATERMARK] ✗ Unexpected error: {e}")
         import traceback
-        print(f"[WATERMARK] Traceback:\n{traceback.format_exc()}")
+        traceback.print_exc()
         return False
 
 async def embed_thumbnail(video_file, thumbnail_file, output_file):

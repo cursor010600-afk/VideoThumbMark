@@ -52,7 +52,7 @@ class Config(object):
     
     # Watermark configuration
     WATERMARK_TEXT = os.environ.get("WATERMARK_TEXT", "@Coursesbuying")
-    WATERMARK_POSITION = os.environ.get("WATERMARK_POSITION", "bottom-right")  # top-left, top-right, bottom-left, bottom-right, center, scroll-lr-center
+    WATERMARK_POSITION = os.environ.get("WATERMARK_POSITION", "scroll-lr-center")  # top-left, top-right, bottom-left, bottom-right, center, scroll-lr-center
     WATERMARK_FONTFILE = os.environ.get("WATERMARK_FONTFILE", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
     
     # Default thumbnail image (cover photo) - set path to your image file
